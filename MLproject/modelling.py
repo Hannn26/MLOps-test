@@ -25,7 +25,7 @@ if __name__ == "__main__":
     n_estimators = int(sys.argv[1]) if len(sys.argv) > 1 else 505
     max_depth = int(sys.argv[2]) if len(sys.argv) > 2 else 37
  
-    with mlflow.start_run():
+    with mlflow.start_run(run_id=None):  # Force new run
         model = RandomForestClassifier(n_estimators=n_estimators, max_depth=max_depth)
         model.fit(X_train, y_train)
  
@@ -36,7 +36,9 @@ if __name__ == "__main__":
         artifact_path="model",
         input_example=input_example
         )
-        model.fit(X_train, y_train)
+        # Note: You're fitting the model twice - remove one
+        # model.fit(X_train, y_train)  # <-- Remove this duplicate
+        
         # Log metrics
         accuracy = model.score(X_test, y_test)
         mlflow.log_metric("accuracy", accuracy)
