@@ -8,17 +8,24 @@ on:
     branches:
       - main
 
+# Add write permissions for the GITHUB_TOKEN
+permissions:
+  contents: write
+
 env:
   CSV_URL: "MLproject/train_pca.csv"
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE
       - uses: actions/checkout@v3
-
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          lfs: true  # Enable Git LFS support
+      
       # Setup Python 3.12.7
       - name: Set up Python 3.12.7
         uses: actions/setup-python@v4
@@ -29,33 +36,36 @@ jobs:
       - name: Check Env
         run: |
           echo $CSV_URL
-
-      # Install mlflow
+      
+      # Install dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install mlflow
+          pip install mlflow scikit-learn pandas numpy
        
       # Run as a mlflow project
       - name: Run mlflow project
         run: |
           mlflow run MLproject --env-manager=local 
-
-      - name: Set up Git LFS
+      
+      # Set up Git LFS and commit changes
+      - name: Set up Git LFS and save results
         run: |
-           git config --global user.name ${{ secrets.username }}
-           git config --global user.email ${{ secrets.email }}
-           git lfs install
-           git lfs track "mlruns/**"
-           git add .gitattributes
-           git commit -m "Track large files in mlruns with Git LFS" || true
-           git push origin main
+          # Configure git
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
           
-       # Save models to GitHub Repository
-      - name: Save mlruns to repo
-        run: |
-           git config --global user.name ${{ secrets.username }}
-           git config --global user.email ${{ secrets.email }}
-           git add -f mlruns/
-           git commit -m "Save mlruns from CI run" || true
-           git push origin main
+          # Setup Git LFS
+          git lfs install
+          git lfs track "mlruns/**"
+          
+          # Add and commit all changes
+          git add .gitattributes mlruns/
+          git commit -m "Track and save mlruns from CI run [skip ci]" || echo "No changes to commit"
+          
+      # Push changes
+      - name: Push changes
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ github.ref }}
