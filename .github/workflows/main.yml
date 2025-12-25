@@ -1,5 +1,4 @@
 name: CI
-
 on:
   push:
     branches:
@@ -20,11 +19,12 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE
+      # Checks-out your repository with full history
       - uses: actions/checkout@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          lfs: true  # Enable Git LFS support
+          lfs: true
+          fetch-depth: 0  # Fetch all history for all branches
       
       # Setup Python 3.12.7
       - name: Set up Python 3.12.7
@@ -59,6 +59,9 @@ jobs:
           git lfs install
           git lfs track "mlruns/**"
           
+          # Pull latest changes with rebase
+          git pull --rebase origin main
+          
           # Add and commit all changes
           git add .gitattributes mlruns/
           git commit -m "Track and save mlruns from CI run [skip ci]" || echo "No changes to commit"
@@ -68,4 +71,5 @@ jobs:
         uses: ad-m/github-push-action@master
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ github.ref }}
+          branch: main
+          force: false
