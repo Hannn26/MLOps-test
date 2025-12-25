@@ -36,33 +36,67 @@ jobs:
         run: |
           mlflow run MLproject --env-manager=local
       
+      - name: Debug - Check mlruns structure
+        run: |
+          echo "=== Current directory ==="
+          pwd
+          echo ""
+          echo "=== Checking for mlruns directory ==="
+          ls -la
+          echo ""
+          echo "=== mlruns directory structure ==="
+          if [ -d "mlruns" ]; then
+            find mlruns -type d | head -20
+            echo ""
+            echo "=== Looking for experiment folders ==="
+            ls -la mlruns/
+            echo ""
+            echo "=== All run directories ==="
+            find mlruns -name "meta.yaml" -type f
+          else
+            echo "mlruns directory not found!"
+          fi
+      
       - name: Set MLflow tracking URI and get run_id
         run: |
           export MLFLOW_TRACKING_URI=file://$(pwd)/mlruns
           echo "MLFLOW_TRACKING_URI=$MLFLOW_TRACKING_URI" >> $GITHUB_ENV
           
-          # Get the latest run_id
-          RUN_ID=$(ls -td mlruns/0/*/ | head -n 1 | cut -d'/' -f3)
+          # Find the experiment directory (could be 0 or another number)
+          EXPERIMENT_DIR=$(find mlruns -mindepth 1 -maxdepth 1 -type d ! -name ".*" | head -n 1)
+          echo "Found experiment directory: $EXPERIMENT_DIR"
+          
+          # Get the latest run_id from that experiment
+          RUN_ID=$(find $EXPERIMENT_DIR -mindepth 1 -maxdepth 1 -type d ! -name ".*" -exec basename {} \; | head -n 1)
           echo "RUN_ID=$RUN_ID" >> $GITHUB_ENV
           echo "Latest run_id: $RUN_ID"
           echo "MLflow tracking URI: $MLFLOW_TRACKING_URI"
+          
+          # Store the experiment path
+          EXPERIMENT_ID=$(basename $EXPERIMENT_DIR)
+          echo "EXPERIMENT_ID=$EXPERIMENT_ID" >> $GITHUB_ENV
+          echo "Experiment ID: $EXPERIMENT_ID"
       
       - name: Verify model exists
         run: |
           echo "Checking if model exists..."
-          if [ -d "mlruns/0/$RUN_ID/artifacts/model" ]; then
-            echo "Model found at mlruns/0/$RUN_ID/artifacts/model"
-            ls -la mlruns/0/$RUN_ID/artifacts/model/
+          echo "Looking for: mlruns/$EXPERIMENT_ID/$RUN_ID/artifacts/model"
+          
+          if [ -d "mlruns/$EXPERIMENT_ID/$RUN_ID/artifacts/model" ]; then
+            echo "✓ Model found at mlruns/$EXPERIMENT_ID/$RUN_ID/artifacts/model"
+            ls -la mlruns/$EXPERIMENT_ID/$RUN_ID/artifacts/model/
           else
             echo "ERROR: Model not found!"
+            echo "Searching for model in artifacts..."
+            find mlruns/$EXPERIMENT_ID/$RUN_ID/artifacts -type f 2>/dev/null || echo "No artifacts found"
             exit 1
           fi
           
       - name: Build Docker Model
         run: |
-          # Use the file path directly instead of runs:/ URI
+          echo "Building Docker image from: mlruns/$EXPERIMENT_ID/$RUN_ID/artifacts/model"
           mlflow models build-docker \
-            --model-uri "mlruns/0/$RUN_ID/artifacts/model" \
+            --model-uri "mlruns/$EXPERIMENT_ID/$RUN_ID/artifacts/model" \
             --name "cc"
       
       - name: Log in to Docker Hub
