@@ -32,63 +32,69 @@ jobs:
           python -m pip install --upgrade pip
           pip install mlflow scikit-learn pandas numpy
       
+      - name: Configure MLflow to use file-based tracking
+        run: |
+          # Remove any existing mlflow.db to force file-based tracking
+          rm -f mlflow.db
+          # Set tracking URI to use file-based backend
+          export MLFLOW_TRACKING_URI=file://$(pwd)/mlruns
+          echo "MLFLOW_TRACKING_URI=$MLFLOW_TRACKING_URI" >> $GITHUB_ENV
+          echo "MLflow will use file-based tracking at: $MLFLOW_TRACKING_URI"
+      
       - name: Run mlflow project
         run: |
           mlflow run MLproject --env-manager=local
       
       - name: Debug - Check mlruns structure
         run: |
-          echo "=== Current directory ==="
-          pwd
-          echo ""
-          echo "=== Checking for mlruns directory ==="
-          ls -la
-          echo ""
           echo "=== mlruns directory structure ==="
           if [ -d "mlruns" ]; then
-            find mlruns -type d | head -20
+            find mlruns -type d
             echo ""
-            echo "=== Looking for experiment folders ==="
-            ls -la mlruns/
-            echo ""
-            echo "=== All run directories ==="
-            find mlruns -name "meta.yaml" -type f
+            echo "=== All files in mlruns ==="
+            find mlruns -type f | head -30
           else
             echo "mlruns directory not found!"
+            exit 1
           fi
       
-      - name: Set MLflow tracking URI and get run_id
+      - name: Get run_id from mlruns
         run: |
-          export MLFLOW_TRACKING_URI=file://$(pwd)/mlruns
-          echo "MLFLOW_TRACKING_URI=$MLFLOW_TRACKING_URI" >> $GITHUB_ENV
-          
-          # Find the experiment directory (could be 0 or another number)
+          # Find the experiment directory (usually 0, but could be different)
           EXPERIMENT_DIR=$(find mlruns -mindepth 1 -maxdepth 1 -type d ! -name ".*" | head -n 1)
+          
+          if [ -z "$EXPERIMENT_DIR" ]; then
+            echo "ERROR: No experiment directory found in mlruns!"
+            exit 1
+          fi
+          
           echo "Found experiment directory: $EXPERIMENT_DIR"
-          
-          # Get the latest run_id from that experiment
-          RUN_ID=$(find $EXPERIMENT_DIR -mindepth 1 -maxdepth 1 -type d ! -name ".*" -exec basename {} \; | head -n 1)
-          echo "RUN_ID=$RUN_ID" >> $GITHUB_ENV
-          echo "Latest run_id: $RUN_ID"
-          echo "MLflow tracking URI: $MLFLOW_TRACKING_URI"
-          
-          # Store the experiment path
           EXPERIMENT_ID=$(basename $EXPERIMENT_DIR)
           echo "EXPERIMENT_ID=$EXPERIMENT_ID" >> $GITHUB_ENV
+          
+          # Get the latest run_id
+          RUN_ID=$(find $EXPERIMENT_DIR -mindepth 1 -maxdepth 1 -type d ! -name ".*" -printf "%T@ %p\n" | sort -rn | head -n 1 | awk '{print $2}' | xargs basename)
+          
+          if [ -z "$RUN_ID" ]; then
+            echo "ERROR: No run found in experiment directory!"
+            exit 1
+          fi
+          
+          echo "RUN_ID=$RUN_ID" >> $GITHUB_ENV
+          echo "Latest run_id: $RUN_ID"
           echo "Experiment ID: $EXPERIMENT_ID"
       
       - name: Verify model exists
         run: |
-          echo "Checking if model exists..."
-          echo "Looking for: mlruns/$EXPERIMENT_ID/$RUN_ID/artifacts/model"
+          echo "Checking if model exists at: mlruns/$EXPERIMENT_ID/$RUN_ID/artifacts/model"
           
           if [ -d "mlruns/$EXPERIMENT_ID/$RUN_ID/artifacts/model" ]; then
-            echo "✓ Model found at mlruns/$EXPERIMENT_ID/$RUN_ID/artifacts/model"
+            echo "✓ Model found!"
             ls -la mlruns/$EXPERIMENT_ID/$RUN_ID/artifacts/model/
           else
             echo "ERROR: Model not found!"
-            echo "Searching for model in artifacts..."
-            find mlruns/$EXPERIMENT_ID/$RUN_ID/artifacts -type f 2>/dev/null || echo "No artifacts found"
+            echo "Contents of run directory:"
+            find mlruns/$EXPERIMENT_ID/$RUN_ID -type f
             exit 1
           fi
           
