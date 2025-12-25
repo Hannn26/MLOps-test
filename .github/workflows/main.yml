@@ -84,38 +84,62 @@ jobs:
           echo "Latest run_id: $RUN_ID"
           echo "Experiment ID: $EXPERIMENT_ID"
       
-      - name: Find and verify model
+      - name: Check model registration
         run: |
-          # Look for model in both artifacts and outputs directories
-          if [ -d "mlruns/$EXPERIMENT_ID/$RUN_ID/artifacts/model" ]; then
-            MODEL_PATH="mlruns/$EXPERIMENT_ID/$RUN_ID/artifacts/model"
-            echo "✓ Model found in artifacts!"
-          elif [ -d "mlruns/$EXPERIMENT_ID/$RUN_ID/outputs" ]; then
-            # Find the model directory in outputs
-            MODEL_DIR=$(find mlruns/$EXPERIMENT_ID/$RUN_ID/outputs -type d -name "m-*" | head -n 1)
-            if [ -n "$MODEL_DIR" ]; then
-              MODEL_PATH="$MODEL_DIR"
-              echo "✓ Model found in outputs: $MODEL_PATH"
-            else
-              echo "ERROR: No model directory found in outputs!"
-              exit 1
-            fi
-          else
-            echo "ERROR: Model not found in artifacts or outputs!"
-            echo "Contents of run directory:"
-            find mlruns/$EXPERIMENT_ID/$RUN_ID -type f
-            exit 1
+          echo "Checking what was logged in the run..."
+          echo "=== Run directory contents ==="
+          find mlruns/$EXPERIMENT_ID/$RUN_ID -type f
+          echo ""
+          
+          # Check if there's a registered model we can use
+          if [ -f "mlruns/$EXPERIMENT_ID/$RUN_ID/outputs/m-*/meta.yaml" ]; then
+            echo "Found model metadata in outputs"
+            cat mlruns/$EXPERIMENT_ID/$RUN_ID/outputs/m-*/meta.yaml
           fi
           
-          echo "MODEL_PATH=$MODEL_PATH" >> $GITHUB_ENV
-          echo "Final model path: $MODEL_PATH"
-          ls -la $MODEL_PATH/
-          
-      - name: Build Docker Model
+      - name: Register model to Model Registry
         run: |
-          echo "Building Docker image from: $MODEL_PATH"
+          python << EOF
+          import mlflow
+          import os
+          
+          # Set tracking URI
+          mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
+          
+          run_id = os.getenv("RUN_ID")
+          experiment_id = os.getenv("EXPERIMENT_ID")
+          
+          print(f"Attempting to register model from run: {run_id}")
+          
+          # Try to register the model
+          try:
+              # Register model using runs:/ URI
+              model_uri = f"runs:/{run_id}/model"
+              result = mlflow.register_model(model_uri, "credit_score_model")
+              print(f"Model registered successfully: {result}")
+              print(f"Model name: {result.name}")
+              print(f"Model version: {result.version}")
+              
+              # Save for next step
+              with open("model_info.txt", "w") as f:
+                  f.write(f"{result.name}\n{result.version}")
+              
+          except Exception as e:
+              print(f"Failed to register with runs:/ URI: {e}")
+              print("This likely means the model wasn't logged properly in the training script")
+              raise
+          EOF
+          
+      - name: Build Docker Model from Registry
+        run: |
+          # Read model info
+          MODEL_NAME=$(head -n 1 model_info.txt)
+          MODEL_VERSION=$(tail -n 1 model_info.txt)
+          
+          echo "Building Docker image from registered model: $MODEL_NAME version $MODEL_VERSION"
+          
           mlflow models build-docker \
-            --model-uri "$MODEL_PATH" \
+            --model-uri "models:/$MODEL_NAME/$MODEL_VERSION" \
             --name "cc"
       
       - name: Log in to Docker Hub
