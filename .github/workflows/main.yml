@@ -84,25 +84,38 @@ jobs:
           echo "Latest run_id: $RUN_ID"
           echo "Experiment ID: $EXPERIMENT_ID"
       
-      - name: Verify model exists
+      - name: Find and verify model
         run: |
-          echo "Checking if model exists at: mlruns/$EXPERIMENT_ID/$RUN_ID/artifacts/model"
-          
+          # Look for model in both artifacts and outputs directories
           if [ -d "mlruns/$EXPERIMENT_ID/$RUN_ID/artifacts/model" ]; then
-            echo "✓ Model found!"
-            ls -la mlruns/$EXPERIMENT_ID/$RUN_ID/artifacts/model/
+            MODEL_PATH="mlruns/$EXPERIMENT_ID/$RUN_ID/artifacts/model"
+            echo "✓ Model found in artifacts!"
+          elif [ -d "mlruns/$EXPERIMENT_ID/$RUN_ID/outputs" ]; then
+            # Find the model directory in outputs
+            MODEL_DIR=$(find mlruns/$EXPERIMENT_ID/$RUN_ID/outputs -type d -name "m-*" | head -n 1)
+            if [ -n "$MODEL_DIR" ]; then
+              MODEL_PATH="$MODEL_DIR"
+              echo "✓ Model found in outputs: $MODEL_PATH"
+            else
+              echo "ERROR: No model directory found in outputs!"
+              exit 1
+            fi
           else
-            echo "ERROR: Model not found!"
+            echo "ERROR: Model not found in artifacts or outputs!"
             echo "Contents of run directory:"
             find mlruns/$EXPERIMENT_ID/$RUN_ID -type f
             exit 1
           fi
           
+          echo "MODEL_PATH=$MODEL_PATH" >> $GITHUB_ENV
+          echo "Final model path: $MODEL_PATH"
+          ls -la $MODEL_PATH/
+          
       - name: Build Docker Model
         run: |
-          echo "Building Docker image from: mlruns/$EXPERIMENT_ID/$RUN_ID/artifacts/model"
+          echo "Building Docker image from: $MODEL_PATH"
           mlflow models build-docker \
-            --model-uri "mlruns/$EXPERIMENT_ID/$RUN_ID/artifacts/model" \
+            --model-uri "$MODEL_PATH" \
             --name "cc"
       
       - name: Log in to Docker Hub
