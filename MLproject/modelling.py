@@ -2,7 +2,6 @@ import mlflow
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, log_loss
 import random
 import numpy as np
 import os
@@ -48,3 +47,4 @@ if __name__ == "__main__":
         mlflow.log_param("n_estimators", n_estimators)
 
         mlflow.log_param("max_depth", max_depth)
+
